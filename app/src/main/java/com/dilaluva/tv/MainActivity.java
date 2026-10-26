@@ -1,9 +1,12 @@
 package com.dilaluva.tv;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -42,6 +45,8 @@ public class MainActivity extends AppCompatActivity {
 
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient());
+        // Puente: la web llama a window.DilaluvaNative.play(url, titulo) para los canales
+        web.addJavascriptInterface(new Bridge(), "DilaluvaNative");
 
         if (state != null) {
             web.restoreState(state);
@@ -57,6 +62,22 @@ public class MainActivity extends AppCompatActivity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    /** Puente JS→nativo: abre el reproductor nativo (ExoPlayer) para http/ts/hls. */
+    private class Bridge {
+        @JavascriptInterface
+        public void play(final String url, final String title) {
+            if (TextUtils.isEmpty(url)) return;
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+                    i.putExtra("url", url);
+                    i.putExtra("title", title);
+                    startActivity(i);
+                }
+            });
+        }
     }
 
     @Override
