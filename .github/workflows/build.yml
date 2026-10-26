@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build:
@@ -25,6 +26,7 @@ jobs:
         run: |
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           echo "SDK=$SDK"
+          ls "$SDK" || true
           SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SM" --licenses >/dev/null 2>&1 || true
           "$SM" "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
@@ -33,15 +35,36 @@ jobs:
         run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log
+          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Report log if build failed
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${BUILD_EXIT:-1}" != "0" ]; then
+            tail -c 55000 /tmp/build.log > /tmp/tail.log
+            printf '```\n' > /tmp/body.md
+            cat /tmp/tail.log >> /tmp/body.md
+            printf '\n```\n' >> /tmp/body.md
+            gh api repos/${{ github.repository }}/issues -f title="build-error" -F body=@/tmp/body.md
+            echo "Build failed with exit ${BUILD_EXIT}"
+            exit 1
+          fi
 
       - name: Upload APK artifact
+        if: ${{ env.BUILD_EXIT == '0' }}
         uses: actions/upload-artifact@v4
         with:
           name: DILALUVA-TV-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish Release with APK
+        if: ${{ env.BUILD_EXIT == '0' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
